@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "ODM Integration",
+  "version": "1.0.0",
+  "description": "Send downloads from your browser to ODM (Osman Download Manager).",
+  "permissions": ["downloads", "storage", "notifications"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ODM Integration"
+  },
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

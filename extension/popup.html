@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --surface: #1b1b1f;
+        --surface-2: #232329;
+        --border: #34343c;
+        --accent: #2f6fed;
+        --dim: #8b8b96;
+      }
+      body {
+        width: 280px;
+        margin: 0;
+        padding: 14px;
+        background: var(--surface);
+        color: #e8e8ee;
+        font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+      }
+      h1 {
+        margin: 0 0 2px;
+        font-size: 16px;
+      }
+      .status {
+        font-size: 12px;
+        color: var(--dim);
+        margin-bottom: 12px;
+      }
+      .status.on { color: #3fb950; }
+      .status.off { color: #f85149; }
+      label {
+        display: block;
+        font-size: 11px;
+        color: var(--dim);
+        margin: 10px 0 4px;
+      }
+      input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 7px 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+        color: inherit;
+        font-family: ui-monospace, monospace;
+        font-size: 11px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      button {
+        flex: 1;
+        padding: 8px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        color: #e8e8ee;
+        font-weight: 400;
+      }
+      .toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 12px;
+        font-size: 12px;
+      }
+      .saved {
+        font-size: 11px;
+        color: #3fb950;
+        min-height: 14px;
+        margin-top: 6px;
+      }
+      footer {
+        margin-top: 14px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--dim);
+      }
+      footer a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <h1>ODM</h1>
+    <div id="status" class="status">Checking...</div>
+
+    <div class="toggle">
+      <span>Intercept downloads</span>
+      <input type="checkbox" id="enabled" />
+    </div>
+
+    <label for="token">Pairing token (from ODM)</label>
+    <input type="text" id="token" placeholder="paste token here" />
+    <div class="saved" id="saved"></div>
+
+    <div class="row">
+      <button id="save">Save</button>
+      <button id="recheck" class="secondary">Recheck</button>
+    </div>
+
+    <footer>
+      <a href="https://wa.me/8801625251930" target="_blank" rel="noreferrer">Osman IT</a>
+      &nbsp;com.osmanit.odm
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
