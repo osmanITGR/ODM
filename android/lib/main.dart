@@ -7,9 +7,9 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import 'services/app_controller.dart';
+import 'services/incoming_links.dart';
 import 'services/storage.dart';
 import 'ui/home_screen.dart';
 import 'ui/theme.dart';
@@ -32,7 +32,7 @@ class OdmApp extends StatefulWidget {
 
 class _OdmAppState extends State<OdmApp> with WidgetsBindingObserver {
   final _homeKey = GlobalKey<HomeScreenState>();
-  StreamSubscription<List<SharedMediaFile>>? _sharing;
+  StreamSubscription<String>? _sharing;
 
   @override
   void initState() {
@@ -47,42 +47,29 @@ class _OdmAppState extends State<OdmApp> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
-  /// Links shared into ODM from any app — the phone's answer to the desktop
-  /// build's browser extension.
+  /// Links handed to ODM from anywhere on the phone — the share sheet, a
+  /// tapped video link, or selected text. This is the mobile answer to the
+  /// desktop build's browser extension.
   void _listenForSharedLinks() {
+    final links = IncomingLinks.instance..start();
+
     // While the app is already open.
-    _sharing = ReceiveSharingIntent.instance.getMediaStream().listen(
-      _handleShared,
-      onError: (Object error) => debugPrint('share stream failed: $error'),
+    _sharing = links.stream.listen(
+      _handleLink,
+      onError: (Object error) => debugPrint('link stream failed: $error'),
     );
 
-    // The share that launched the app in the first place.
-    ReceiveSharingIntent.instance.getInitialMedia().then((media) {
-      _handleShared(media);
-      ReceiveSharingIntent.instance.reset();
+    // The link that launched the app in the first place.
+    links.initialLink().then((url) {
+      if (url != null) _handleLink(url);
     });
   }
 
-  void _handleShared(List<SharedMediaFile> media) {
-    if (media.isEmpty) return;
-
-    // A shared link arrives as text, which may be a sentence with the URL in
-    // it — "Watch this: https://…" is what most apps send.
-    final text = media
-        .map((m) => m.path)
-        .firstWhere((p) => p.isNotEmpty, orElse: () => '');
-    final url = _firstUrl(text);
-    if (url == null) return;
-
+  void _handleLink(String url) {
     // The home screen may not be mounted yet on a cold share-launch.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _homeKey.currentState?.openWithUrl(url);
     });
-  }
-
-  String? _firstUrl(String text) {
-    final match = RegExp(r'https?://\S+').firstMatch(text);
-    return match?.group(0);
   }
 
   @override

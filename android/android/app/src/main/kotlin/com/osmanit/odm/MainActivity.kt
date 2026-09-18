@@ -13,6 +13,19 @@ import java.util.concurrent.Executors
 class MainActivity : FlutterActivity() {
 
     private val channelName = "com.osmanit.odm/muxer"
+    private val linkChannelName = "com.osmanit.odm/links"
+
+    /** Set once the Dart side is listening; before that, links are queued. */
+    private var linkChannel: MethodChannel? = null
+
+    /**
+     * A link that arrived before Flutter was ready.
+     *
+     * A cold start from a share lands here: the intent is delivered to the
+     * activity well before the Dart side has registered its handler, so
+     * without this the very first share would be dropped.
+     */
+    private var pendingLink: String? = null
 
     /**
      * Muxing a long video takes seconds, so it must not run on the platform
@@ -35,6 +48,69 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        linkChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            linkChannelName,
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // Dart asks for the link that launched the app, if any.
+                    "getInitialLink" -> {
+                        result.success(pendingLink)
+                        pendingLink = null
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+
+        // The intent that started this activity may already carry a link.
+        extractLink(intent)?.let { pendingLink = it }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // Already running: hand the link straight over.
+        extractLink(intent)?.let { link ->
+            val channel = linkChannel
+            if (channel != null) {
+                channel.invokeMethod("onLink", link)
+            } else {
+                pendingLink = link
+            }
+        }
+    }
+
+    /**
+     * Find the text an intent carries, wherever the sending app put it.
+     *
+     * Apps are inconsistent: some use EXTRA_TEXT, some pass the URL as the
+     * intent's data, selected text arrives as EXTRA_PROCESS_TEXT, and
+     * SEND_MULTIPLE uses a list. The text is handed over as-is — pulling the
+     * URL out of it is done once on the Dart side, where it is under test,
+     * rather than reimplemented here.
+     */
+    private fun extractLink(intent: Intent?): String? {
+        if (intent == null) return null
+
+        val candidates = listOfNotNull(
+            intent.getStringExtra(Intent.EXTRA_TEXT),
+            intent.getStringExtra(Intent.EXTRA_PROCESS_TEXT),
+            intent.dataString,
+            intent.getStringExtra(Intent.EXTRA_SUBJECT),
+        )
+
+        candidates.firstOrNull { it.contains("http", ignoreCase = true) }
+            ?.let { return it }
+
+        // SEND_MULTIPLE: take the first entry that mentions a link.
+        intent.getStringArrayListExtra(Intent.EXTRA_TEXT)
+            ?.firstOrNull { it.contains("http", ignoreCase = true) }
+            ?.let { return it }
+
+        return candidates.firstOrNull()
     }
 
     private fun handleMux(

@@ -52,15 +52,78 @@
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Facebook, YouTube and several others do not always send
+                     text/plain: some use text/* or an unqualified type, and a
+                     filter that lists only text/plain silently drops those. -->
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="text/*" />
             </intent-filter>
 
-            <!-- "Open with ODM" on a link the user long-presses. -->
+            <!-- Some apps share a link as SEND_MULTIPLE even for one item. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+
+            <!-- "Open with ODM" on a video link the user taps or long-presses.
+                 Hosts are listed rather than matching every http(s) URL, which
+                 would put ODM in the chooser for ordinary web pages too. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="www.facebook.com" />
+                <data android:host="facebook.com" />
+                <data android:host="m.facebook.com" />
+                <data android:host="web.facebook.com" />
+                <data android:host="fb.watch" />
+                <data android:host="www.instagram.com" />
+                <data android:host="instagram.com" />
+                <data android:host="www.tiktok.com" />
+                <data android:host="tiktok.com" />
+                <data android:host="vm.tiktok.com" />
+                <data android:host="www.youtube.com" />
+                <data android:host="youtube.com" />
+                <data android:host="m.youtube.com" />
+                <data android:host="youtu.be" />
+                <data android:host="twitter.com" />
+                <data android:host="x.com" />
+                <data android:host="vimeo.com" />
+                <data android:host="www.dailymotion.com" />
+                <data android:host="dailymotion.com" />
+            </intent-filter>
+
+            <!-- A direct media file link, on any host. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+
+            <!-- odm:// links, for anything that wants to hand ODM a URL. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="odm" />
+            </intent-filter>
+
+            <!-- Text selected anywhere on the phone: "Download with ODM". -->
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 

@@ -16,7 +16,7 @@ ported from Python to Dart.
 | `video.mux()` (ffmpeg) | `engine/muxer.dart` + `Muxer.kt` | Bundling ffmpeg would add ~30 MB; `MediaMuxer` does the same stream copy |
 | `gui.py` (CustomTkinter) | `ui/` (Flutter) | Tkinter does not run on Android |
 | `clipboard.py` | Share intent + clipboard read | Android has no global clipboard watching |
-| `bridge.py` + extension | Share intent | Android browsers have no extensions |
+| `bridge.py` + extension | `services/incoming_links.dart` | Android browsers have no extensions |
 | `setup.py`, `setup_ui.py` | — | Windows registry and Add/Remove Programs only |
 
 ## Running from source
@@ -43,15 +43,30 @@ Release signing reads `android/key.properties`, which is not in the repo. See
 for what to do on a new machine. Without that file the build falls back to debug
 keys, which produces an APK that cannot be updated in place later.
 
+## Launcher icon
+
+The icon is the Windows app's artwork, redrawn as geometry rather than upscaled
+(the 256px original stair-steps badly at 1024px):
+
+```
+python tool/make_icons.py          # writes assets/icon/
+dart run flutter_launcher_icons    # writes the res/ densities
+```
+
+`odm_foreground.png` is drawn near full-bleed on purpose:
+`flutter_launcher_icons` applies its own 16% inset when building the adaptive
+icon, and insetting in both places leaves the arrow visibly undersized.
+
 ## Tests
 
 ```
 flutter test
 ```
 
-45 tests, no network needed. They cover the parts where a bug is expensive:
+56 tests, no network needed. They cover the parts where a bug is expensive:
 segment planning (a byte-range off-by-one silently corrupts a file), the rate
-limiter, format selection, and URL classification.
+limiter, format selection, URL classification, and pulling a URL out of shared
+text.
 
 Two real bugs were caught here before the app ever ran — a rate-limiter
 infinite loop that froze downloads whenever the speed cap fell below the
@@ -95,6 +110,25 @@ fetched as one ranged file.
 Known limits: YouTube changes its defences regularly, so that path will break
 periodically. DRM-protected services (Netflix, Prime Video) are not possible by
 any means and are not attempted.
+
+## How links get in
+
+Four intent filters in `AndroidManifest.xml`, all landing in
+`services/incoming_links.dart`:
+
+- `SEND` / `SEND_MULTIPLE` — the share sheet. Both `text/plain` and `text/*`
+  are declared: several apps, Facebook included, do not always send
+  `text/plain`, and a filter listing only that silently drops them.
+- `VIEW` on a named host — "Open with ODM" on a video link. Hosts are listed
+  explicitly rather than matching all of http(s), which would put ODM in the
+  chooser for ordinary web pages.
+- `VIEW` on a media mime type — a direct file link on any host.
+- `PROCESS_TEXT` — text selected anywhere on the phone.
+
+The native side hands over whatever text the intent carried; `firstUrlIn()`
+extracts the URL. Apps rarely send a bare one — Facebook shares a sentence
+("Check this out! https://fb.watch/…"), YouTube appends the title — and
+treating the whole string as a URL is what made those shares fail.
 
 ## Background behaviour
 
