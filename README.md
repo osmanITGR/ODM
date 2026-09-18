@@ -86,6 +86,9 @@ Start মেনুতে **PowerShell** খুলে নিচের লাই�
 ৫. **Load unpacked** চাপুন → এই ফোল্ডার দিন: C:\Users\<আপনার নাম>\AppData\Local\ODM\extension  
 ৬. Extension popup-এ token পেস্ট করে **Save** চাপুন  
 
+> ✓ token একবার দিলেই হবে — ODM বন্ধ করে খুললেও কাজ করবে।  
+> token ফাঁস হয়ে গেলে **New token** চেপে নতুন একটি নিন।
+
 ---
 
 ## 🗑️ আনইনস্টল করতে

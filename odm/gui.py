@@ -623,7 +623,9 @@ class App(ctk.CTk):
         token_entry.configure(state="readonly")
 
         ctk.CTkLabel(
-            dialog, text="Paste this token into the ODM browser extension.",
+            dialog,
+            text="Paste this token into the ODM browser extension. You only "
+                 "need to do this once.",
             font=ctk.CTkFont(size=10), text_color=TEXT_DIM,
         ).pack(padx=20, anchor="w")
 
@@ -646,6 +648,14 @@ class App(ctk.CTk):
             self.clipboard_append(self.bridge.token)
             bridge_state.set("Token copied to clipboard")
 
+        def new_token():
+            """Issue a new token, for when the old one has been shared."""
+            token_entry.configure(state="normal")
+            token_entry.delete(0, "end")
+            token_entry.insert(0, self.bridge.regenerate_token())
+            token_entry.configure(state="readonly")
+            bridge_state.set("New token - paste it into the extension again")
+
         row = ctk.CTkFrame(dialog, fg_color="transparent")
         row.pack(padx=20, pady=(8, 0), fill="x")
         bridge_btn = ctk.CTkButton(
@@ -658,6 +668,11 @@ class App(ctk.CTk):
             row, text="Copy token", width=100, height=30, corner_radius=6,
             fg_color=SURFACE_2, hover_color=BORDER, border_width=1, border_color=BORDER,
             font=ctk.CTkFont(size=11), command=copy_token,
+        ).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(
+            row, text="New token", width=95, height=30, corner_radius=6,
+            fg_color=SURFACE_2, hover_color=BORDER, border_width=1, border_color=BORDER,
+            font=ctk.CTkFont(size=11), command=new_token,
         ).pack(side="left", padx=(8, 0))
 
         # --- schedule ---

@@ -8,14 +8,52 @@ from __future__ import annotations
 
 import hmac
 import json
+import os
 import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
 DEFAULT_PORT = 47653
 # Only these origins may call the bridge; browsers enforce this via CORS.
 ALLOWED_ORIGIN_SCHEMES = ("chrome-extension://", "moz-extension://")
+
+
+def token_file() -> Path:
+    """Where the pairing token is kept between runs."""
+    base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+    root = Path(base) if base else Path.home() / ".config"
+    return root / "ODM" / "bridge-token"
+
+
+def load_or_create_token() -> str:
+    """Return the saved pairing token, generating one on first use.
+
+    The token has to survive a restart. Generating a fresh one each launch
+    meant the extension had to be re-paired every time ODM was reopened, which
+    looks exactly like the pairing being broken.
+    """
+    path = token_file()
+    try:
+        saved = path.read_text(encoding="utf-8").strip()
+        # A truncated or hand-edited file should be replaced, not trusted.
+        if len(saved) >= 24:
+            return saved
+    except OSError:
+        pass
+
+    token = secrets.token_urlsafe(24)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(token, encoding="utf-8")
+        # The token authorises queueing downloads, so keep it to this user.
+        if os.name != "nt":
+            path.chmod(0o600)
+    except OSError:
+        # Unwritable storage only costs re-pairing; the bridge still works.
+        pass
+    return token
 
 
 class BridgeHandler(BaseHTTPRequestHandler):
@@ -110,7 +148,7 @@ class Bridge:
     def __init__(self, on_download, port: int = DEFAULT_PORT, token: str | None = None):
         self.on_download = on_download
         self.port = port
-        self.token = token or secrets.token_urlsafe(24)
+        self.token = token or load_or_create_token()
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -123,10 +161,21 @@ class Bridge:
         return f"http://127.0.0.1:{self.port}"
 
     def start(self) -> None:
+        """Bind the endpoint, or raise if the port is already in use.
+
+        The extension has the port compiled in, so falling back to another one
+        would leave a bridge nothing could reach. Failing loudly is what lets
+        the GUI say so instead of showing "Listening" on a dead socket.
+        """
         if self._server:
             return
         handler = type("BoundHandler", (BridgeHandler,), {"bridge": self})
-        self._server = ThreadingHTTPServer(("127.0.0.1", self.port), handler)
+        # Without this, Windows lets a second process bind the same port and
+        # quietly take the requests: the bridge looks up but never answers.
+        server_class = type(
+            "ExclusiveServer", (ThreadingHTTPServer,), {"allow_reuse_address": False}
+        )
+        self._server = server_class(("127.0.0.1", self.port), handler)
         self._server.daemon_threads = True
         self.port = self._server.server_address[1]
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
@@ -139,3 +188,20 @@ class Bridge:
         self._server.server_close()
         self._server = None
         self._thread = None
+
+    def regenerate_token(self) -> str:
+        """Issue a new token, invalidating the old one.
+
+        For when a token has been shared by accident: every extension holding
+        the old one stops being able to queue downloads.
+        """
+        self.token = secrets.token_urlsafe(24)
+        try:
+            path = token_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(self.token, encoding="utf-8")
+            if os.name != "nt":
+                path.chmod(0o600)
+        except OSError:
+            pass
+        return self.token
