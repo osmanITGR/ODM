@@ -1,151 +1,75 @@
+﻿<div align="center">
+
 # ODM — Osman Download Manager
 
-`com.osmanit.odm` · [Osman IT — WhatsApp +8801625251930](https://wa.me/8801625251930)
+**দ্রুতগতির ডাউনলোড ম্যানেজার | Windows**
 
-A segmented download manager for Windows. Splits each file into parallel byte
-ranges over separate connections, which is what makes downloads several times
-faster than a single stream.
+[![Download](https://img.shields.io/github/v/release/osmanITGR/ODM?label=Download%20ODM&style=for-the-badge&color=0078D4)](https://github.com/osmanITGR/ODM/releases/latest)
 
-## Features
+</div>
 
-- **Segmented downloading** — up to 32 parallel connections per file via HTTP `Range`
-- **Speed boost** — connections that finish early split the slowest remaining
-  segment instead of going idle, which is where uneven servers lose time
-- **Pause and resume** — survives app restarts; partial data and segment state are kept on disk
-- **Download queue** — several files at once, with a configurable concurrency limit
-- **Video downloading** — resolves pages from thousands of sites, picks a quality,
-  and merges separate video and audio tracks into one playable file
-- **Bandwidth limit** — an app-wide cap, adjustable while downloads are running
-- **Scheduling** — restrict downloading to a daily time window, including ones crossing midnight
-- **Browser integration** — a local bridge plus a Chrome/Edge extension that hands downloads to ODM
-- **Clipboard watching** — optionally picks up download links as you copy them
-- **Automatic fallback** — servers that reject range requests are downloaded as a single stream
-- **Correct filenames** — read from `Content-Disposition`, including RFC 5987 encoding
-- **Retry on failure** — a dropped connection resumes that segment where it stopped
+---
 
-## Running from source
+## ⬇️ ডাউনলোড ও ইনস্টল করুন
 
-```
-pip install -r requirements.txt
-python main.py
-```
+১. উপরের **Download ODM** বাটনে ক্লিক করুন  
+২. **ODM.exe** ফাইলটি ডাউনলোড করুন  
+৩. ফাইলটিতে ডাবল-ক্লিক করুন → **Install** বাটনে ক্লিক করুন  
+৪. ব্যস! ডেস্কটপে ODM-এর আইকন চলে আসবে।
 
-## Command line
+> ⚠️ **Windows সতর্কবার্তা দেখালে:** "More info" → "Run anyway" ক্লিক করুন।  
+> এটি ভাইরাস নয় — নতুন সফটওয়্যারে ডিজিটাল সার্টিফিকেট না থাকলে Windows এমন দেখায়।
 
-```
-python -m odm.cli <URL> -o <folder> -n 16
-```
+---
 
-| Flag | Meaning |
+## ✨ কী কী করতে পারবেন
+
+| ফিচার | বিবরণ |
 |---|---|
-| `-o`, `--output` | destination folder (default: current directory) |
-| `-n`, `--connections` | number of parallel connections (default: 8) |
-| `-f`, `--filename` | override the saved filename |
-| `--no-boost` | disable work stealing |
+| ⚡ **দ্রুত ডাউনলোড** | একটি ফাইলকে ৩২টি ভাগে ভেঙে একসাথে নামায় — ব্রাউজারের চেয়ে কয়েকগুণ দ্রুত |
+| ⏸️ **থামানো ও চালু করা** | কম্পিউটার বন্ধ করলেও ডাউনলোড নষ্ট হয় না |
+| 🎬 **ভিডিও ডাউনলোড** | YouTube-সহ হাজারো সাইট থেকে ভিডিও নামানো যায় |
+| 📋 **Download Queue** | একসাথে অনেক ফাইল সারিবদ্ধভাবে ডাউনলোড |
+| 🌐 **Browser Integration** | Chrome/Edge-এর ডাউনলোড সরাসরি ODM-এ চলে আসবে |
+| ⏰ **Scheduling** | নির্দিষ্ট সময়ে (যেমন রাত ২টা–৬টা) ডাউনলোড চালানো |
+| 📶 **Speed Limit** | ইন্টারনেটের কতটুকু ব্যবহার করবে নিজে ঠিক করুন |
 
-Press Ctrl+C to pause; re-run the same command to resume.
+---
 
-## About download speed
+## 🎬 ভিডিও ডাউনলোডের জন্য (ঐচ্ছিক)
 
-ODM opens several connections and fetches a different byte range down each one.
-Two things decide how much that helps:
+বেশিরভাগ ভিডিওর ছবি ও শব্দ আলাদা থাকে। জোড়া লাগাতে **ffmpeg** লাগে।
 
-- **Your connection's ceiling.** If a single stream already saturates your line,
-  more connections cannot exceed it. Measure the ceiling with `-n 1` and compare.
-- **How evenly the server feeds each range.** This is where **Speed boost**
-  matters: when one range lags, a connection that has finished its own work
-  halves the laggard's remaining bytes and takes the tail, instead of sitting
-  idle until the straggler finishes.
+Start মেনুতে **PowerShell** খুলুন, নিচের লাইনটি লিখে Enter চাপুন:
 
-Against a server with one deliberately slow range, boost measured **1.89× faster**
-here. On a server that feeds every range evenly, it changes little — the gain
-comes from removing stragglers, not from adding raw parallelism.
+`winget install Gyan.FFmpeg`
 
-Raising connections past 8–16 rarely helps and some servers throttle or refuse
-many parallel requests from one client.
+এটি ছাড়াও ODM চলবে, তবে কিছু ভিডিওর মান সীমিত থাকবে।
 
-## Video downloads
+---
 
-Paste a video page URL and ODM offers the available qualities. Most sites now
-serve video and audio as separate streams, so ODM downloads both — each one
-segmented for speed — and merges them with ffmpeg.
+## 🌐 Browser Integration সেটআপ
 
-Requirements:
+১. ODM খুলুন → **Settings → Browser integration**  
+২. **Start bridge** → **Copy token** ক্লিক করুন  
+৩. Chrome-এ যান: chrome://extensions  
+৪. **Developer mode** চালু করুন  
+৫. **Load unpacked** চাপুন → এই ফোল্ডার দিন: C:\Users\<আপনার নাম>\AppData\Local\ODM\extension  
+৬. Extension popup-এ token পেস্ট করে **Save** চাপুন  
 
-- `yt-dlp` (in `requirements.txt`) resolves the page into stream URLs
-- `ffmpeg` on PATH merges the tracks — install with `winget install Gyan.FFmpeg`
+---
 
-Without ffmpeg, only single-stream qualities and audio-only downloads work.
+## 🗑️ আনইনস্টল করতে
 
-## Browser integration
+**Settings → Apps → Installed apps → ODM → Uninstall**
 
-ODM runs a small HTTP endpoint on `127.0.0.1` that a browser extension talks to.
+---
 
-1. In ODM, open **Settings → Browser integration** and click **Start bridge**.
-2. Click **Copy token**.
-3. In Chrome or Edge, open `chrome://extensions`, turn on **Developer mode**,
-   click **Load unpacked**, and select the `extension/` folder.
-4. Open the extension popup, paste the token, and click **Save**.
+<div align="center">
 
-Downloads of recognised file types are then handed to ODM instead of the
-browser. If ODM is not running, the browser downloads them normally.
+## 📞 সাহায্য দরকার হলে
 
-Security: the bridge listens only on loopback, every request must carry the
-token generated by the running app, and only extension origins get CORS access,
-so a web page cannot queue downloads.
+**Osman IT**  
+WhatsApp: [+8801625251930](https://wa.me/8801625251930)
 
-## Building the executable
-
-```
-pip install pyinstaller
-python -m PyInstaller --clean --noconfirm odm.spec
-```
-
-The result is `dist/ODM.exe`, a standalone build that needs no Python
-installation. Note that unsigned PyInstaller executables are often flagged by
-antivirus heuristics; code signing is the only real fix.
-
-## Tests
-
-```
-python -m unittest discover -s tests
-```
-
-72 tests, most of them against a local HTTP server so they need no internet.
-They cover segment planning, byte-exact multi-connection downloads, work
-stealing (including that splits leave no gaps or overlaps), the non-resumable
-and unknown-length fallbacks, pause/resume across object lifetimes, queue
-concurrency and user-pause holds, rate limiting, schedule windows including
-midnight wrap, video format selection, real ffmpeg muxing, and the bridge's
-token/scheme/CORS checks.
-
-## How it works
-
-1. **Probe** — a one-byte range request reveals the total size, whether the
-   server supports ranges, and the filename.
-2. **Plan** — the size is split into roughly equal segments, one per connection.
-   Segments below 1 MB are merged, since the per-request overhead would exceed
-   the benefit.
-3. **Fetch** — one thread per segment writes into its own region of a
-   preallocated `.part` file, so no reassembly step is needed.
-4. **Track** — segment offsets are checkpointed to a sidecar JSON file keyed by
-   URL hash, which is what makes resume work after the process exits.
-5. **Finish** — the `.part` file is renamed into place and the sidecar removed.
-
-## Layout
-
-```
-odm/
-  engine.py     segmented download engine and rate limiter
-  manager.py    queue, scheduler pump, and video muxing
-  video.py      yt-dlp extraction, format selection, ffmpeg muxing
-  bridge.py     local HTTP endpoint for the browser extension
-  scheduler.py  daily time windows
-  clipboard.py  clipboard URL watcher
-  gui.py        CustomTkinter interface
-  cli.py        command line front end
-extension/      Chrome/Edge extension (Manifest V3)
-tests/          66 tests
-main.py         GUI entry point
-odm.spec        PyInstaller build spec
-```
+</div>
