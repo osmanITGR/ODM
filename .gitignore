@@ -32,7 +32,6 @@ Thumbs.db
 .env
 
 # Developer-only folders
-tests/
 installer/
 odm.spec
 version_info.txt

@@ -450,9 +450,42 @@ class App(ctk.CTk):
         threading.Thread(target=task, daemon=True).start()
 
     def _video_failed(self, url: str, message: str) -> None:
-        # Extraction failed: fall back to treating it as a plain file.
-        self.summary_label.configure(text=f"Not a video page - queued as file")
+        """Explain why a video page yielded nothing, in the user's terms.
+
+        Queueing the page URL as a plain file used to be the fallback here,
+        which downloaded the HTML itself under the video's name. That looks
+        like a corrupt download, so a recognised video page now reports the
+        failure instead. Anything unrecognised is still queued, since it may
+        genuinely be a file whose type the extractor simply did not know.
+        """
+        from . import video as video_mod
+
+        if video_mod.is_media_page(url):
+            self.summary_label.configure(text=self._explain_video_error(url, message))
+            return
+
+        self.summary_label.configure(text="Not a video page - queued as file")
         self.manager.add(url)
+
+    @staticmethod
+    def _explain_video_error(url: str, message: str) -> str:
+        """Turn an extractor error into something worth reading.
+
+        yt-dlp's own text names flags and wiki pages, which is no help to
+        someone who just pasted a link.
+        """
+        lowered = message.lower()
+        if "logged-in" in lowered or "log in" in lowered or "private" in lowered:
+            return "This video needs a login - it cannot be downloaded"
+        if "not found" in lowered or "404" in lowered or "unavailable" in lowered:
+            return "This video no longer exists or was removed"
+        if "drm" in lowered or "protected" in lowered:
+            return "This video is DRM protected - it cannot be downloaded"
+        if "geo" in lowered or "region" in lowered or "country" in lowered:
+            return "This video is blocked in your region"
+        if "unsupported url" in lowered or "no video" in lowered:
+            return "No video was found on that page"
+        return "Could not read that video page - it may be private"
 
     def _choose_quality(self, info) -> None:
         heights = info.video_heights()

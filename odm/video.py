@@ -138,6 +138,39 @@ def is_media_page(url: str) -> bool:
     return False
 
 
+def _height_from_name(format_id: str, note: str) -> int | None:
+    """Guess a height from a quality name, for extractors that omit `height`.
+
+    Facebook labels its two progressive streams "sd" and "hd" and reports no
+    height at all, which leaves the format picker unable to tell them apart —
+    it would hand back whichever came first, usually the lower one. These
+    stand-in values only have to order correctly against each other.
+    """
+    for text in (format_id, note):
+        lowered = (text or "").lower()
+        if "hd" in lowered:
+            return 720
+        if "sd" in lowered:
+            return 360
+    return None
+
+
+def _codec(value: str | None) -> str:
+    """Normalise a codec field from yt-dlp.
+
+    The extractors disagree about the absent case: some report the string
+    "none" to mean the track is genuinely missing, while others — Facebook
+    among them — omit the field entirely because they did not probe for it.
+    Treating a missing field as "no track" made every Facebook video look like
+    it had neither picture nor sound, so none of them could be downloaded.
+    "unknown" keeps such a stream usable, since a progressive mp4 almost
+    always carries both.
+    """
+    if value is None:
+        return "unknown"
+    return value or "none"
+
+
 def _safe_title(raw: str) -> str:
     cleaned = "".join(c for c in raw if c not in '<>:"/\\|?*').strip()
     return (cleaned or "video")[:120]
@@ -173,18 +206,23 @@ def extract(url: str, timeout: float = 30.0) -> MediaInfo:
         if raw.get("protocol", "") not in ("http", "https"):
             continue
 
-        height = raw.get("height")
         note = raw.get("format_note") or ""
         ext = raw.get("ext") or "bin"
         size = raw.get("filesize") or raw.get("filesize_approx")
+        format_id = raw.get("format_id", "")
+        height = raw.get("height") or _height_from_name(format_id, note)
 
-        if height:
-            label = f"{height}p"
-        elif raw.get("acodec") not in ("none", None) and raw.get("vcodec") in ("none", None):
+        audio_only = raw.get("acodec") not in ("none", None) and raw.get(
+            "vcodec"
+        ) in ("none", None)
+
+        if raw.get("height"):
+            label = f"{raw['height']}p"
+        elif audio_only:
             abr = raw.get("abr")
             label = f"audio {int(abr)}k" if abr else "audio"
         else:
-            label = note or raw.get("format_id", "stream")
+            label = note or format_id or "stream"
 
         formats.append(
             MediaFormat(
@@ -194,8 +232,8 @@ def extract(url: str, timeout: float = 30.0) -> MediaInfo:
                 label=f"{label} ({ext})",
                 filesize=size,
                 height=height,
-                vcodec=raw.get("vcodec") or "none",
-                acodec=raw.get("acodec") or "none",
+                vcodec=_codec(raw.get("vcodec")),
+                acodec=_codec(raw.get("acodec")),
             )
         )
 

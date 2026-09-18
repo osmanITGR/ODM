@@ -46,6 +46,14 @@ class RateLimiter:
             self._updated = time.monotonic()
 
     def take(self, amount: int) -> None:
+        """Wait until `amount` bytes may be read, then spend them.
+
+        The bucket holds at most one second's worth of tokens, so a read larger
+        than the current rate could never be satisfied outright: a 256 KB chunk
+        under a 128 KB/s cap would wait forever. Such a read is let through on
+        a full bucket and the balance carried as a debt, which the next calls
+        pay off — the average still holds, and nothing wedges.
+        """
         if self._rate <= 0:
             return
         while True:
@@ -54,6 +62,9 @@ class RateLimiter:
                 self._tokens = min(self._rate, self._tokens + (now - self._updated) * self._rate)
                 self._updated = now
                 if self._tokens >= amount:
+                    self._tokens -= amount
+                    return
+                if amount > self._rate and self._tokens >= self._rate:
                     self._tokens -= amount
                     return
                 deficit = amount - self._tokens
@@ -134,6 +145,35 @@ def _filename_from(url: str, headers) -> str:
     return name or "download"
 
 
+class NotAFileError(ValueError):
+    """The URL serves a web page, not something worth downloading."""
+
+    def __str__(self) -> str:
+        return (
+            "That link is a web page, not a file. If it is a video page, "
+            "paste it again so ODM can look for the video on it."
+        )
+
+
+def _reject_web_page(headers) -> None:
+    """Refuse a response that is a page rather than a downloadable file.
+
+    Without this, pointing ODM at a video page it cannot extract saves the
+    HTML itself: a few hundred KB of markup under the video's name, which
+    looks exactly like a corrupt download. Only pages are rejected — an
+    unknown or missing type still passes, since plenty of file servers send
+    application/octet-stream or nothing at all.
+    """
+    content_type = (headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    if content_type not in ("text/html", "application/xhtml+xml"):
+        return
+    # An attachment is a file the server means to be saved, even if it is
+    # markup — someone deliberately downloading an .html.
+    if "attachment" in (headers.get("Content-Disposition") or "").lower():
+        return
+    raise NotAFileError
+
+
 def probe(url: str, timeout: float = 15.0) -> SourceInfo:
     """Discover size, resumability and filename without fetching the body."""
     request = urllib.request.Request(
@@ -146,6 +186,7 @@ def probe(url: str, timeout: float = 15.0) -> SourceInfo:
             headers = response.headers
             final_url = response.geturl()
             status = response.status
+            _reject_web_page(headers)
             content_range = headers.get("Content-Range", "")
             if status == 206 and "/" in content_range:
                 tail = content_range.rsplit("/", 1)[1].strip()
@@ -158,6 +199,7 @@ def probe(url: str, timeout: float = 15.0) -> SourceInfo:
         if exc.code in (416, 501):
             request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(request, timeout=timeout) as response:
+                _reject_web_page(response.headers)
                 length = response.headers.get("Content-Length")
                 size = int(length) if length and length.isdigit() else None
                 return SourceInfo(response.geturl(), size, False, _filename_from(response.geturl(), response.headers))
