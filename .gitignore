@@ -1,15 +1,15 @@
-# Python
+# Python cache
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-*.egg
-*.egg-info/
 
-# PyInstaller output
+# Build / distribution
 dist/
 build/
 *.exe
+ODM-Setup.zip
+ODM-Share/
 
 # Virtual environments
 venv/
@@ -25,14 +25,15 @@ env/
 Thumbs.db
 .DS_Store
 
-# App data / logs
+# App runtime files
 *.log
 *.part
 *.sidecar.json
-
-# Installer zip (large binary)
-ODM-Setup.zip
-ODM-Share/
-
-# Secrets / tokens
 .env
+
+# Developer-only folders
+tests/
+installer/
+android/
+odm.spec
+version_info.txt
