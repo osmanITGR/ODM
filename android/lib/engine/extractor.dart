@@ -21,6 +21,24 @@ const String _browserUa =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
+/// What a real desktop Chrome navigation sends.
+///
+/// Sites that gate their markup check more than the user agent. Facebook in
+/// particular returns a stripped page with no playback URLs unless Accept
+/// lists the image types a browser would take.
+const Map<String, String> _browserHeaders = {
+  'user-agent': _browserUa,
+  'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,'
+      'image/avif,image/webp,image/apng,*/*;q=0.8',
+  'accept-language': 'en-US,en;q=0.9',
+  'upgrade-insecure-requests': '1',
+  'sec-fetch-dest': 'document',
+  'sec-fetch-mode': 'navigate',
+  'sec-fetch-site': 'none',
+  'sec-fetch-user': '?1',
+  'cache-control': 'max-age=0',
+};
+
 const Set<String> _mediaExtensions = {
   'mp4', 'mkv', 'webm', 'avi', 'mov', 'flv', 'm4v', '3gp', 'ts', 'mpg', 'mpeg',
   'mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'flac', 'wma',
@@ -95,9 +113,24 @@ Future<MediaInfo> extract(
   }
 
   throw ExtractorException(
-    'Could not find a downloadable video on this page.',
+    _noVideoMessage(host),
     isUnsupported: true,
   );
+}
+
+/// Explain a failed extraction in terms of what the user can do about it.
+String _noVideoMessage(String host) {
+  if (host.contains('facebook') || host.contains('fb.')) {
+    return 'No video was found on this Facebook page. Private posts, and '
+        'videos in groups you must be logged in to see, cannot be '
+        'downloaded.';
+  }
+  if (host.contains('instagram')) {
+    return 'No video was found on this Instagram page. Private accounts '
+        'cannot be downloaded.';
+  }
+  return 'Could not find a downloadable video on this page. It may be '
+      'private, region-locked, or the site may have changed.';
 }
 
 String _normaliseUrl(String url) {
@@ -169,12 +202,13 @@ Future<String> _fetchPage(
     ..userAgent = _browserUa;
   try {
     final request = await client.getUrl(Uri.parse(url)).timeout(timeout);
-    request.headers.set('user-agent', _browserUa);
-    request.headers.set(
-      'accept',
-      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    );
-    request.headers.set('accept-language', 'en-US,en;q=0.9');
+    // Facebook serves two different pages for the same URL and decides which
+    // by how closely the request resembles a real browser. Without the image
+    // types in Accept it returns a ~460 KB shell with no playback URLs in it;
+    // with them, the full ~950 KB page. The rest of these headers are sent
+    // for the same reason — this set is what a desktop Chrome navigation
+    // actually looks like.
+    _browserHeaders.forEach(request.headers.set);
     extraHeaders.forEach(request.headers.set);
 
     final response = await request.close().timeout(timeout);

@@ -110,6 +110,42 @@ String _sanitiseFilename(String name) {
   return cleaned;
 }
 
+/// Thrown when a URL turns out to be a web page rather than a file.
+class NotAFileException implements Exception {
+  NotAFileException(this.url);
+
+  final String url;
+
+  @override
+  String toString() =>
+      'That link is a web page, not a file. If it is a video page, use '
+      'Check link so ODM can find the video on it.';
+}
+
+/// Refuse a response that is a web page rather than a downloadable file.
+///
+/// Without this, pointing ODM at a video page saves the HTML itself: a few
+/// hundred KB of markup with a video's filename on it, which looks exactly
+/// like a corrupt download. Only pages are rejected — an unknown or missing
+/// content type is still allowed through, since plenty of file servers send
+/// application/octet-stream or nothing at all.
+void _rejectWebPage(HttpClientResponse response, String url) {
+  final type = response.headers.contentType;
+  if (type == null) return;
+  final mime = '${type.primaryType}/${type.subType}'.toLowerCase();
+
+  const pageTypes = {'text/html', 'application/xhtml+xml'};
+  if (!pageTypes.contains(mime)) return;
+
+  // A Content-Disposition attachment means the server intends it as a file
+  // even though it is markup — an .html the user genuinely asked to save.
+  final disposition =
+      response.headers.value('content-disposition')?.toLowerCase() ?? '';
+  if (disposition.contains('attachment')) return;
+
+  throw NotAFileException(url);
+}
+
 /// Discover size, resumability and filename without fetching the body.
 Future<SourceInfo> probe(
   String url, {
@@ -131,6 +167,8 @@ Future<SourceInfo> probe(
 
     // Drain the single byte so the connection can be reused or closed cleanly.
     await response.drain<void>().timeout(timeout, onTimeout: () {});
+
+    _rejectWebPage(response, url);
 
     if (response.statusCode == 206 && contentRange.contains('/')) {
       final tail = contentRange.split('/').last.trim();
@@ -489,6 +527,7 @@ class Download {
   }
 
   String _describeError(Object error) {
+    if (error is NotAFileException) return error.toString();
     if (error is SocketException) {
       return 'network unreachable — ${error.osError?.message ?? error.message}';
     }

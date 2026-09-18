@@ -128,8 +128,18 @@ class _AddDownloadSheetState extends State<_AddDownloadSheet> {
     if (url.isEmpty) return;
 
     if (info == null) {
-      // Nothing was resolved — hand the raw URL to the engine, which probes it
-      // itself and will find the filename from the response.
+      // Nothing was resolved. Handing a video page's URL to the engine would
+      // download the HTML itself — a few hundred KB of markup saved as a file,
+      // which looks like a broken download and is what this guards against.
+      if (isMediaPage(url)) {
+        setState(
+          () => _error =
+              'This is a video page, but no video could be found on it. '
+              'It may be private, or the site may have changed. '
+              'Tap Check link to try again.',
+        );
+        return;
+      }
       widget.controller.manager.add(url);
     } else {
       final plan = info.plan(maxHeight: _chosenHeight);
@@ -303,14 +313,6 @@ class _ErrorNotice extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(message, style: const TextStyle(fontSize: 13.5)),
-                const SizedBox(height: 6),
-                Text(
-                  'You can still tap Download to try it as a direct file.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
               ],
             ),
           ),
