@@ -34,6 +34,18 @@ Thumbs.db
 # Developer-only folders
 tests/
 installer/
-android/
 odm.spec
 version_info.txt
+
+# Android app: the source is tracked, the signing key never is. Losing the
+# keystore means no further updates can be published under this identity, so
+# it is backed up by hand rather than committed.
+android/**/key.properties
+android/*.jks
+android/*.keystore
+android/KEYSTORE-BACKUP-*.txt
+android/.dart_tool/
+android/build/
+android/android/.gradle/
+android/android/app/build/
+android/.flutter-plugins-dependencies
