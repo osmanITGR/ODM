@@ -1,8 +1,12 @@
-"""Refusing to download a web page as if it were a file.
+"""Guards on what a download is allowed to fetch and where it may write.
 
-Pointing ODM at a video page it cannot extract used to save the HTML itself:
-a few hundred KB of markup under the video's name, which looks exactly like a
-corrupt download. These cover the guard that stops it.
+Two things a download manager must refuse:
+
+- Saving a web page as if it were a file. Pointing ODM at a video page it
+  cannot extract used to save the HTML itself — a few hundred KB of markup
+  under the video's name, which looks exactly like a corrupt download.
+- Writing outside the destination folder, when a filename supplied over the
+  browser bridge or the CLI contains a path.
 """
 
 from __future__ import annotations
@@ -13,10 +17,11 @@ import sys
 import threading
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from odm.engine import NotAFileError, probe
+from odm.engine import Download, NotAFileError, probe
 
 
 class ConfigurableHandler(http.server.BaseHTTPRequestHandler):
@@ -100,6 +105,51 @@ class TestWebPageGuard(unittest.TestCase):
         message = str(NotAFileError())
         self.assertIn("web page", message)
         self.assertIn("video page", message)
+
+
+class TestTargetStaysInsideDestination(unittest.TestCase):
+    """A supplied filename must not write outside the download folder.
+
+    Names read from a server are stripped when they are parsed, but one given
+    explicitly — over the browser bridge, or with the CLI's -f — reaches the
+    path untouched.
+    """
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.dest = Path(self.tmp.name).resolve()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def target_for(self, name: str) -> Path:
+        return Download("https://example.com/x", self.dest, filename=name).target.resolve()
+
+    def assert_inside(self, name: str) -> Path:
+        target = self.target_for(name)
+        self.assertEqual(target.parent, self.dest, f"{name!r} escaped to {target}")
+        return target
+
+    def test_relative_traversal_is_flattened(self):
+        self.assertEqual(self.assert_inside("../../../evil.exe").name, "evil.exe")
+
+    def test_absolute_path_is_flattened(self):
+        self.assertEqual(self.assert_inside("C:/Windows/evil.dll").name, "evil.dll")
+
+    def test_subdirectory_is_flattened(self):
+        self.assertEqual(self.assert_inside("sub/dir/file.zip").name, "file.zip")
+
+    def test_dot_names_fall_back(self):
+        self.assertEqual(self.assert_inside("..").name, "download")
+        self.assertEqual(self.assert_inside(".").name, "download")
+
+    def test_ordinary_name_is_untouched(self):
+        self.assertEqual(self.assert_inside("clip.mp4").name, "clip.mp4")
+
+    def test_part_and_meta_files_are_inside_too(self):
+        download = Download("https://example.com/x", self.dest, filename="../../evil")
+        self.assertEqual(download.part_file.resolve().parent, self.dest)
+        self.assertEqual(download.meta_file.resolve().parent, self.dest)
 
 
 if __name__ == "__main__":

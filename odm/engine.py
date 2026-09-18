@@ -131,6 +131,21 @@ class Progress:
         return max(0.0, (self.total - self.downloaded) / self.speed)
 
 
+def _safe_name(name: str) -> str:
+    """Reduce a filename to a bare name inside the destination folder.
+
+    Names read from a server are already stripped by `_filename_from`, but one
+    supplied explicitly — over the browser bridge, or with the CLI's -f — is
+    not. Without this, "../../../evil.exe" would be written outside the
+    download folder, and an absolute path anywhere on the disk.
+    """
+    candidate = Path(name).name  # drops any directory part, and drive letters
+    # A name that was nothing but separators or dots leaves nothing usable.
+    if not candidate or candidate in (".", ".."):
+        return "download"
+    return candidate
+
+
 def _filename_from(url: str, headers) -> str:
     disposition = headers.get("Content-Disposition", "") if headers else ""
     if "filename=" in disposition:
@@ -266,7 +281,7 @@ class Download:
     @property
     def target(self) -> Path:
         name = self._forced_name or (self.info.filename if self.info else "download")
-        return self.dest_dir / name
+        return self.dest_dir / _safe_name(name)
 
     @property
     def part_file(self) -> Path:

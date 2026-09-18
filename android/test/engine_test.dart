@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:odm/engine/download_engine.dart';
+import 'package:path/path.dart' as p;
 import 'package:odm/engine/models.dart';
 import 'package:odm/engine/rate_limiter.dart';
 
@@ -187,6 +188,52 @@ void main() {
 
     test('supplies a default when the URL carries no name', () {
       expect(filenameFrom('https://example.com/', null), 'download');
+    });
+  });
+
+  group('target path stays inside the destination', () {
+    Download withName(String name) => Download(
+      url: 'https://example.com/x',
+      destDir: '/downloads',
+      filename: name,
+    );
+
+    /// The separator depends on the host running the tests, not on Android,
+    /// so assert on the parts rather than the joined string.
+    void expectSavedAs(String supplied, String expected) {
+      final path = withName(supplied).targetPath;
+      expect(p.basename(path), expected);
+      expect(p.dirname(path), '/downloads');
+    }
+
+    test('a traversing name is reduced to its basename', () {
+      expectSavedAs('../../../evil.exe', 'evil.exe');
+    });
+
+    test('windows separators are stripped too', () {
+      // A server on any OS can send a name; basename only knows about "/".
+      expectSavedAs(r'..\..\evil.dll', 'evil.dll');
+    });
+
+    test('an absolute path does not escape', () {
+      expectSavedAs('/etc/passwd', 'passwd');
+    });
+
+    test('a name with nothing usable falls back', () {
+      expectSavedAs('..', 'download');
+      expectSavedAs('.', 'download');
+      expectSavedAs('   ', 'download');
+    });
+
+    test('an ordinary name is untouched', () {
+      expectSavedAs('clip.mp4', 'clip.mp4');
+    });
+
+    test('the part and meta files are inside too', () {
+      final download = withName('../../evil');
+      expect(p.dirname(download.partPath), '/downloads');
+      expect(p.dirname(download.metaPath), '/downloads');
+      expect(download.partPath, isNot(contains('..')));
     });
   });
 

@@ -91,6 +91,19 @@ String _tryUnquote(String value) {
   }
 }
 
+/// Reduce a filename to a bare name, so it cannot escape its folder.
+///
+/// Windows-style separators are stripped too: a name can arrive from a server
+/// running any OS, and `p.basename` on Android only knows about `/`.
+String _safeName(String name) {
+  final flattened = name.replaceAll(r'\', '/');
+  final candidate = p.basename(flattened).trim();
+  if (candidate.isEmpty || candidate == '.' || candidate == '..') {
+    return 'download';
+  }
+  return candidate;
+}
+
 /// Strip characters that are illegal in Android filenames.
 ///
 /// Returns empty when nothing meaningful survives, so the caller falls through
@@ -256,7 +269,12 @@ class Download {
   String get filename =>
       _forcedName ?? info?.filename ?? p.basename(Uri.parse(url).path);
 
-  String get targetPath => p.join(destDir, filename.isEmpty ? 'download' : filename);
+  /// Always inside [destDir].
+  ///
+  /// A name read from a server is already stripped by [filenameFrom], but one
+  /// supplied explicitly is not. Without reducing it to a bare basename,
+  /// "../../../evil" would be written outside the download folder.
+  String get targetPath => p.join(destDir, _safeName(filename));
 
   String get partPath => '$targetPath.part';
 

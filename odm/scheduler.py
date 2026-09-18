@@ -36,8 +36,18 @@ def parse_window(text: str) -> Window:
 
 
 def _parse_time(text: str) -> dtime:
+    """Parse 'HH:MM'.
+
+    Out-of-range values are rejected rather than wrapped: silently reading
+    "25:00" as 01:00 tells someone who mistyped that their window was accepted,
+    and they would only find out when downloads ran at the wrong time.
+    """
     hours, _, minutes = text.partition(":")
-    return dtime(int(hours) % 24, int(minutes or 0) % 60)
+    hour = int(hours)
+    minute = int(minutes or 0)
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        raise ValueError(f"time out of range: {text!r}")
+    return dtime(hour, minute)
 
 
 class Scheduler:
