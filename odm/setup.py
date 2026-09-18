@@ -16,10 +16,13 @@ import sys
 import winreg
 from pathlib import Path
 
+from . import __version__
+
 APP_NAME = "ODM"
 DISPLAY_NAME = "ODM - Osman Download Manager"
 PUBLISHER = "Osman IT"
-VERSION = "1.0.0"
+# Shown in Add/Remove Programs; read from one place so it cannot drift.
+VERSION = __version__
 UNINSTALL_KEY = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_NAME}"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 

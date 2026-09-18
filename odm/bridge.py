@@ -102,7 +102,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
         route = urlparse(self.path).path
         if route == "/ping":
             # Unauthenticated liveness probe so the extension can show status.
-            self._reply(200, {"app": "ODM", "version": "1.0.0"}, self._origin_allowed())
+            from . import __version__
+
+            self._reply(200, {"app": "ODM", "version": __version__}, self._origin_allowed())
             return
         self._reply(404, {"error": "not found"}, self._origin_allowed())
 

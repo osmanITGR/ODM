@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../engine/rate_limiter.dart';
@@ -134,7 +135,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const ListTile(
             title: Text('ODM — Osman Download Manager'),
-            subtitle: Text('Version 1.0.0 · com.osmanit.odm'),
+            subtitle: _AppVersion(),
           ),
 
           ListTile(
@@ -234,6 +235,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (choice != null && mounted) {
       setState(() => settings.themeMode = choice);
     }
+  }
+}
+
+/// The installed version, read from the package rather than hardcoded.
+///
+/// A number written into the UI falls out of step with pubspec.yaml the first
+/// time someone forgets to change both.
+class _AppVersion extends StatelessWidget {
+  const _AppVersion();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snapshot) {
+        final info = snapshot.data;
+        // Until it resolves, show the identifier alone rather than a stale
+        // number or a flash of empty space.
+        final version = info == null ? '' : 'Version ${info.version} · ';
+        return Text('$version${info?.packageName ?? 'com.osmanit.odm'}');
+      },
+    );
   }
 }
 
