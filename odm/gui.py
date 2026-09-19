@@ -216,6 +216,33 @@ class App(ctk.CTk):
         self.monitor = ClipboardMonitor(self._clipboard_hit)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(400, self._tick)
+        self._start_bridge_quietly()
+
+        # The installer hands this over right after the extension step, so the
+        # token is ready to paste when the popup asks for it.
+        if "--copy-token" in sys.argv:
+            self.after(600, self._copy_token_to_clipboard)
+
+    def _copy_token_to_clipboard(self) -> None:
+        self.clipboard_clear()
+        self.clipboard_append(self.bridge.token)
+        self.summary_label.configure(
+            text="Pairing token copied - paste it into the browser extension"
+        )
+
+    def _start_bridge_quietly(self) -> None:
+        """Bring the bridge up on launch.
+
+        The extension can only reach a running bridge, so leaving it off by
+        default meant every session began with the extension reporting ODM as
+        not running until someone found the Settings toggle. A failure here is
+        not worth interrupting anyone over — Settings shows the real state and
+        the error if they go looking.
+        """
+        try:
+            self.bridge.start()
+        except OSError:
+            pass
 
     # layout -----------------------------------------------------------
 

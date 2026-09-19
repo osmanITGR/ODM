@@ -126,48 +126,101 @@ class SetupWindow(ctk.CTk):
             self._finish()
 
     def _show_extension_step(self) -> None:
-        """Explain the load-unpacked step, which browsers require by design."""
+        """Walk the user through Load unpacked, doing every part that can be.
+
+        Chrome removed silent extension installs in 2018, so the final pick
+        has to be the user's. Everything leading up to it is automated: the
+        folder is on the clipboard before the picker opens, and a button per
+        installed browser opens that browser straight at its extensions page.
+        """
         for widget in self.winfo_children():
             widget.destroy()
 
+        self.geometry("480x560")
+
         ctk.CTkLabel(
             self, text="Installed", font=ctk.CTkFont(size=20, weight="bold"),
-        ).pack(padx=28, pady=(26, 2), anchor="w")
+            text_color="#e6e6ea",
+        ).pack(padx=28, pady=(24, 2), anchor="w")
         ctk.CTkLabel(
             self,
-            text="One step left for browser integration.",
+            text="Last step: connect your browser.",
             font=ctk.CTkFont(size=12),
             text_color=TEXT_DIM,
         ).pack(padx=28, anchor="w")
 
-        steps = (
-            "1.  Open  chrome://extensions  or  edge://extensions",
-            '2.  Turn on "Developer mode" (top right)',
-            '3.  Click "Load unpacked" and pick the folder that opens',
-            "4.  In ODM: Settings → Browser integration → Start bridge",
-            "5.  Copy the token and paste it into the extension popup",
-        )
-        box = ctk.CTkFrame(self, fg_color=SURFACE_2, corner_radius=10,
-                           border_width=1, border_color=BORDER)
-        box.pack(padx=24, pady=(16, 0), fill="x")
-        for line in steps:
+        browsers = setup.find_browsers()
+
+        # Step 1 -----------------------------------------------------------
+        # find_browsers() puts the one in use first, so opening browsers[0] is
+        # opening whichever browser the user is actually in.
+        self._step_heading("1.  Your extensions page is opening")
+
+        if browsers:
+            grid = ctk.CTkFrame(self, fg_color="transparent")
+            grid.pack(padx=24, pady=(6, 0), fill="x")
+            for browser in browsers:
+                ctk.CTkButton(
+                    grid, text=browser[0], width=96, height=34, corner_radius=8,
+                    fg_color=SURFACE_2, hover_color=BORDER, border_width=1,
+                    border_color=BORDER, font=ctk.CTkFont(size=12),
+                    command=lambda b=browser: self._open_browser(b),
+                ).pack(side="left", padx=(0, 8))
             ctk.CTkLabel(
-                box, text=line, font=ctk.CTkFont(size=12), justify="left",
-                wraplength=380,
-            ).pack(padx=16, pady=3, anchor="w")
+                self, text="Using another browser? Pick it above.",
+                font=ctk.CTkFont(size=11), text_color=TEXT_DIM,
+            ).pack(padx=28, pady=(6, 0), anchor="w")
+        else:
+            # No known browser on disk: the address still works if typed.
+            ctk.CTkLabel(
+                self, text="Type  chrome://extensions  in your browser.",
+                font=ctk.CTkFont(size=12), text_color=TEXT_DIM,
+            ).pack(padx=28, pady=(6, 0), anchor="w")
+
+        # Steps 2-3 --------------------------------------------------------
+        self._step_heading('2.  Turn on "Developer mode" (top right)')
+        self._step_heading('3.  Click "Load unpacked", then paste this folder')
+
+        path_row = ctk.CTkFrame(self, fg_color="transparent")
+        path_row.pack(padx=24, pady=(6, 0), fill="x")
+        path_box = ctk.CTkEntry(
+            path_row, height=32, corner_radius=8, fg_color=SURFACE_2,
+            border_color=BORDER, text_color="#e6e6ea",
+            font=ctk.CTkFont(size=11, family="Consolas"),
+        )
+        path_box.pack(side="left", fill="x", expand=True)
+        path_box.insert(0, str(setup.EXTENSION_DIR))
+        path_box.configure(state="readonly")
+        ctk.CTkButton(
+            path_row, text="Copy", width=64, height=32, corner_radius=8,
+            fg_color=SURFACE_2, hover_color=BORDER, border_width=1,
+            border_color=BORDER, font=ctk.CTkFont(size=12),
+            command=self._copy_path,
+        ).pack(side="left", padx=(8, 0))
 
         ctk.CTkLabel(
             self,
-            text="Browsers block silent extension installs from disk, so this "
-                 "part cannot be automated.",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_DIM,
-            wraplength=400,
-            justify="left",
-        ).pack(padx=28, pady=(12, 0), anchor="w")
+            text="Already copied — press Ctrl+V in the folder picker.",
+            font=ctk.CTkFont(size=11), text_color=TEXT_DIM,
+        ).pack(padx=28, pady=(4, 0), anchor="w")
+
+        # Step 4 -----------------------------------------------------------
+        self._step_heading("4.  Paste the token into the extension popup")
+        ctk.CTkLabel(
+            self,
+            text="ODM opens with the token ready. Click the ODM icon in your "
+                 "browser toolbar, paste, and press Save.",
+            font=ctk.CTkFont(size=11), text_color=TEXT_DIM,
+            wraplength=410, justify="left",
+        ).pack(padx=28, pady=(4, 0), anchor="w")
+
+        self.ext_status = ctk.CTkLabel(
+            self, text="", font=ctk.CTkFont(size=11), text_color="#3fb950",
+        )
+        self.ext_status.pack(padx=28, pady=(10, 0), anchor="w")
 
         row = ctk.CTkFrame(self, fg_color="transparent")
-        row.pack(side="bottom", fill="x", padx=24, pady=20)
+        row.pack(side="bottom", fill="x", padx=24, pady=18)
         ctk.CTkButton(
             row, text="Open ODM", height=38, corner_radius=8, fg_color=ACCENT,
             hover_color="#2558c0", font=ctk.CTkFont(size=13, weight="bold"),
@@ -179,10 +232,61 @@ class SetupWindow(ctk.CTk):
             border_color=BORDER, command=setup.open_extension_folder,
         ).pack(side="right", padx=(0, 8))
 
-        setup.open_extension_folder()
+        # Have the path waiting before the picker is ever opened.
+        self._copy_path(announce=False)
+
+        if browsers:
+            # Open the browser the user is in, a moment after this window has
+            # drawn — immediately would put it behind the new browser window
+            # with no idea why it appeared.
+            self.after(900, lambda: self._open_browser(browsers[0], auto=True))
+
+    def _step_heading(self, text: str) -> None:
+        # Explicit colour: the theme default is too dim against this
+        # background, and these headings are the instructions themselves.
+        ctk.CTkLabel(
+            self, text=text, font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#e6e6ea", justify="left", wraplength=410,
+        ).pack(padx=28, pady=(16, 0), anchor="w")
+
+    def _copy_path(self, announce: bool = True) -> None:
+        copied = setup.copy_to_clipboard(str(setup.EXTENSION_DIR))
+        if announce and hasattr(self, "ext_status"):
+            self.ext_status.configure(
+                text="Folder path copied" if copied else "Could not copy - "
+                     "select the path above and copy it manually",
+                text_color="#3fb950" if copied else "#d29922",
+            )
+
+    def _open_browser(self, browser, auto: bool = False) -> None:
+        if setup.open_extensions_page(browser):
+            # The picker is next, so make sure the path is what gets pasted.
+            self._copy_path(announce=False)
+            self.ext_status.configure(
+                text=f"{browser[0]} opened - folder path is on your clipboard",
+                text_color="#3fb950",
+            )
+            # Keep this window visible: the browser takes focus, and these
+            # instructions are what the user needs while they are in it.
+            self.lift()
+            self.attributes("-topmost", True)
+            self.after(2500, lambda: self.attributes("-topmost", False))
+        elif auto:
+            # Nothing the user did failed, so point at the buttons instead of
+            # reporting an error they did not cause.
+            self.ext_status.configure(
+                text="Click your browser above to open its extensions page",
+                text_color="#d29922",
+            )
+        else:
+            self.ext_status.configure(
+                text=f"Could not open {browser[0]}", text_color="#d29922",
+            )
 
     def _finish(self) -> None:
-        setup.launch_installed()
+        # Only after the extension step, where the token is the next thing
+        # the user needs.
+        setup.launch_installed(copy_token=self.extension_var.get())
         self.destroy()
 
 

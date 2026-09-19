@@ -199,11 +199,160 @@ def uninstall() -> None:
     )
 
 
-def launch_installed() -> None:
-    """Start the installed copy and let this one exit."""
-    subprocess.Popen([str(TARGET_EXE)], cwd=str(INSTALL_DIR), close_fds=True)
+def launch_installed(copy_token: bool = False) -> None:
+    """Start the installed copy and let this one exit.
+
+    `copy_token` is passed straight after a first install, so the pairing
+    token is on the clipboard by the time the extension popup asks for it.
+    """
+    command = [str(TARGET_EXE)]
+    if copy_token:
+        command.append("--copy-token")
+    subprocess.Popen(command, cwd=str(INSTALL_DIR), close_fds=True)
 
 
 def open_extension_folder() -> None:
     if EXTENSION_DIR.is_dir():
         os.startfile(EXTENSION_DIR)  # noqa: S606 - opening a local folder
+
+
+# Browser integration helpers ------------------------------------------------
+#
+# Chrome removed silent extension installs in 2018 because malware used them,
+# so the Load unpacked step cannot be automated. Everything around it can be:
+# finding the browser, opening its extensions page, and putting the folder on
+# the clipboard so the file picker can be filled with one paste.
+
+# Each browser's extensions page, and where its executable usually lives.
+_BROWSERS = (
+    ("Chrome", "chrome://extensions", ("Google", "Chrome", "Application", "chrome.exe")),
+    ("Edge", "edge://extensions", ("Microsoft", "Edge", "Application", "msedge.exe")),
+    ("Brave", "brave://extensions",
+     ("BraveSoftware", "Brave-Browser", "Application", "brave.exe")),
+    ("Opera", "opera://extensions", ("Opera", "launcher.exe")),
+    ("Vivaldi", "vivaldi://extensions", ("Vivaldi", "Application", "vivaldi.exe")),
+)
+
+
+def _browser_roots() -> list[Path]:
+    """Directories browsers install themselves into, per-user and system-wide."""
+    names = ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA")
+    return [Path(os.environ[n]) for n in names if os.environ.get(n)]
+
+
+def find_browsers() -> list[tuple[str, str, Path]]:
+    """Return (name, extensions URL, executable) for each browser installed.
+
+    Ordered so the browser the user is actually in comes first: whichever is
+    running, then their default, then the rest. That is the one whose
+    extensions page should open on its own.
+    """
+    found = []
+    for name, url, parts in _BROWSERS:
+        for root in _browser_roots():
+            candidate = root.joinpath(*parts)
+            if candidate.is_file():
+                found.append((name, url, candidate))
+                break
+
+    running = _running_browser_names()
+    default = _default_browser_name()
+
+    def rank(browser: tuple[str, str, Path]) -> tuple[int, int]:
+        name = browser[0]
+        # Running beats default, default beats merely installed; ties keep
+        # the order above so the list does not shuffle between launches.
+        return (
+            0 if name in running else 1,
+            0 if name == default else 1,
+        )
+
+    return sorted(found, key=rank)
+
+
+def _running_browser_names() -> set[str]:
+    """Names of the browsers with a window open right now.
+
+    Matched on the process name rather than the path, since a browser can be
+    installed in several places and the running one is what matters.
+    """
+    processes = {
+        "chrome": "Chrome",
+        "msedge": "Edge",
+        "brave": "Brave",
+        "opera": "Opera",
+        "vivaldi": "Vivaldi",
+    }
+    try:
+        result = subprocess.run(
+            [
+                "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                "Get-Process " + ",".join(processes)
+                + " -ErrorAction SilentlyContinue"
+                " | Select-Object -ExpandProperty ProcessName -Unique",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            **_no_window(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+
+    return {
+        processes[line.strip().lower()]
+        for line in result.stdout.splitlines()
+        if line.strip().lower() in processes
+    }
+
+
+def _default_browser_name() -> str | None:
+    """The browser Windows opens https:// links with, if it is one we know."""
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\Shell\Associations"
+            r"\UrlAssociations\https\UserChoice",
+        )
+        with key:
+            prog_id, _ = winreg.QueryValueEx(key, "ProgId")
+    except OSError:
+        return None
+
+    prog_id = prog_id.lower()
+    for fragment, name in (
+        ("chrome", "Chrome"),
+        ("msedge", "Edge"),
+        ("edge", "Edge"),
+        ("brave", "Brave"),
+        ("opera", "Opera"),
+        ("vivaldi", "Vivaldi"),
+    ):
+        if fragment in prog_id:
+            return name
+    return None
+
+
+def open_extensions_page(browser: tuple[str, str, Path]) -> bool:
+    """Open a browser at its extensions page.
+
+    The URL is passed to that browser's own executable rather than to the
+    default handler, since chrome:// and edge:// mean nothing to the shell.
+    """
+    _, url, executable = browser
+    try:
+        subprocess.Popen([str(executable), url], close_fds=True)
+        return True
+    except OSError:
+        return False
+
+
+def copy_to_clipboard(text: str) -> bool:
+    """Put text on the clipboard without needing a Tk window."""
+    try:
+        subprocess.run(
+            ["clip"], input=text.encode("utf-16-le"), check=True, **_no_window()
+        )
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
