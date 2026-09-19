@@ -618,10 +618,19 @@ class App(ctk.CTk):
     def _bridge_download(self, url: str, filename: str | None) -> None:
         self.after(0, lambda: self.manager.add(url, filename=filename))
 
+    @staticmethod
+    def _browser_icon(executable):
+        """A browser's own icon for its Connect button, or None if unavailable."""
+        from .setup_ui import _browser_icon
+
+        return _browser_icon(executable)
+
     def _open_settings(self) -> None:
         dialog = ctk.CTkToplevel(self)
         dialog.title("Settings")
-        dialog.geometry("440x470")
+        # Taller than it was: the browser row and its explanation were added
+        # below the token, and the schedule section still has to fit under it.
+        dialog.geometry("440x510")
         dialog.resizable(False, False)
         dialog.configure(fg_color=SURFACE)
         dialog.transient(self)
@@ -683,8 +692,70 @@ class App(ctk.CTk):
             token_entry.configure(state="readonly")
             bridge_state.set("New token - paste it into the extension again")
 
+        # One row per installed browser, so a browser added later can be
+        # connected without reinstalling ODM.
+        from . import setup as setup_mod
+
+        def connect_browser(browser):
+            """Open a browser at its extensions page, path ready to paste."""
+            name = browser[0]
+            if not setup_mod.open_extensions_page(browser):
+                bridge_state.set(f"Could not open {name}")
+                return
+            copied = setup_mod.copy_to_clipboard(str(setup_mod.EXTENSION_DIR))
+            bridge_state.set(
+                f"{name} opened - press Ctrl+V in Load unpacked"
+                if copied
+                else f"{name} opened - the folder is {setup_mod.EXTENSION_DIR}"
+            )
+
+        browsers = setup_mod.find_browsers()
+        if browsers:
+            ctk.CTkLabel(
+                dialog,
+                text="Connect a browser — opens its extensions page and copies "
+                     "the folder to paste into Load unpacked.",
+                font=ctk.CTkFont(size=10), text_color=TEXT_DIM,
+                wraplength=390, justify="left",
+            ).pack(padx=20, pady=(10, 4), anchor="w")
+
+            browser_row = ctk.CTkFrame(dialog, fg_color="transparent")
+            browser_row.pack(padx=20, pady=(0, 2), fill="x")
+            # Held on the dialog so Tk does not garbage-collect the images
+            # while the buttons are still showing them.
+            dialog._browser_icons = []
+            for browser in browsers:
+                icon = self._browser_icon(browser[2])
+                if icon is not None:
+                    dialog._browser_icons.append(icon)
+                ctk.CTkButton(
+                    browser_row, text=browser[0], image=icon, compound="left",
+                    width=96 if icon else 84, height=28,
+                    corner_radius=6, fg_color=SURFACE_2, hover_color=BORDER,
+                    border_width=1, border_color=BORDER,
+                    font=ctk.CTkFont(size=11),
+                    command=lambda b=browser: connect_browser(b),
+                ).pack(side="left", padx=(0, 6))
+
+            ctk.CTkButton(
+                browser_row, text="Folder", width=70, height=28, corner_radius=6,
+                fg_color=SURFACE_2, hover_color=BORDER, border_width=1,
+                border_color=BORDER, font=ctk.CTkFont(size=11),
+                command=setup_mod.open_extension_folder,
+            ).pack(side="left")
+        else:
+            # Firefox is deliberately absent: it uses a different extension
+            # format, and this one is built for Chromium browsers.
+            ctk.CTkLabel(
+                dialog,
+                text="No supported browser found. ODM works with Chrome, Edge, "
+                     "Brave, Opera and Vivaldi.",
+                font=ctk.CTkFont(size=10), text_color=TEXT_DIM,
+                wraplength=390, justify="left",
+            ).pack(padx=20, pady=(10, 2), anchor="w")
+
         row = ctk.CTkFrame(dialog, fg_color="transparent")
-        row.pack(padx=20, pady=(8, 0), fill="x")
+        row.pack(padx=20, pady=(10, 0), fill="x")
         bridge_btn = ctk.CTkButton(
             row, text="Stop bridge" if self.bridge.running else "Start bridge",
             width=110, height=30, corner_radius=6, fg_color=ACCENT, hover_color="#2558c0",

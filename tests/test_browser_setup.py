@@ -36,7 +36,12 @@ class TestFindBrowsers(unittest.TestCase):
         exe.write_text("")
 
     def find_with_root(self):
-        with mock.patch.object(setup, "_browser_roots", return_value=[self.root]):
+        # Registry disabled: these cover the directory scan on its own, against
+        # a scratch tree rather than whatever this machine has installed.
+        with mock.patch.object(setup, "_registered_browsers", return_value=[]), \
+             mock.patch.object(setup, "_browser_roots", return_value=[self.root]), \
+             mock.patch.object(setup, "_running_browser_names", return_value=set()), \
+             mock.patch.object(setup, "_default_browser_name", return_value=None):
             return setup.find_browsers()
 
     def test_finds_chrome(self):
@@ -73,6 +78,52 @@ class TestFindBrowsers(unittest.TestCase):
         self.assertEqual(exe.name, "chrome.exe")
 
 
+class TestRegistryDetection(unittest.TestCase):
+    """Browsers are found wherever Windows says they are.
+
+    The fixed install paths miss a browser put on a second drive or in a
+    custom folder, which the registry still knows about.
+    """
+
+    def test_registry_names_map_to_supported_browsers(self):
+        self.assertEqual(setup._match_browser("Google Chrome"), ("Chrome", "chrome://extensions"))
+        self.assertEqual(setup._match_browser("Microsoft Edge"), ("Edge", "edge://extensions"))
+        self.assertEqual(setup._match_browser("Brave"), ("Brave", "brave://extensions"))
+
+    def test_unsupported_browsers_are_left_out(self):
+        # Offering a button that cannot work is worse than omitting it:
+        # Firefox uses a different extension format, IE has none.
+        self.assertIsNone(setup._match_browser("IEXPLORE.EXE"))
+        self.assertIsNone(setup._match_browser("Firefox-308046B0AF4A39CB"))
+
+    def test_a_browser_found_twice_is_listed_once(self):
+        registered = [(
+            "Chrome", "chrome://extensions", Path("D:/Custom/chrome.exe"),
+        )]
+        with mock.patch.object(setup, "_registered_browsers", return_value=registered), \
+             mock.patch.object(setup, "_running_browser_names", return_value=set()), \
+             mock.patch.object(setup, "_default_browser_name", return_value=None):
+            names = [name for name, _, _ in setup.find_browsers()]
+
+        self.assertEqual(names.count("Chrome"), 1)
+
+    def test_the_registry_path_wins_over_the_guessed_one(self):
+        # Someone who installed to another drive must get that copy launched.
+        custom = Path("D:/Custom/chrome.exe")
+        with mock.patch.object(
+            setup, "_registered_browsers",
+            return_value=[("Chrome", "chrome://extensions", custom)],
+        ), mock.patch.object(setup, "_running_browser_names", return_value=set()), \
+             mock.patch.object(setup, "_default_browser_name", return_value=None):
+            chrome = next(b for b in setup.find_browsers() if b[0] == "Chrome")
+
+        self.assertEqual(chrome[2], custom)
+
+    def test_an_unreadable_registry_is_not_fatal(self):
+        with mock.patch.object(setup.winreg, "OpenKey", side_effect=OSError):
+            self.assertEqual(setup._registered_browsers(), [])
+
+
 class TestBrowserOrdering(unittest.TestCase):
     """The first browser in the list is the one opened automatically.
 
@@ -96,7 +147,10 @@ class TestBrowserOrdering(unittest.TestCase):
         self.tmp.cleanup()
 
     def order(self, running: set[str], default: str | None) -> list[str]:
-        with mock.patch.object(setup, "_browser_roots", return_value=[self.root]), \
+        # Registry disabled so the ordering is tested against the scratch
+        # directory rather than whatever this machine has installed.
+        with mock.patch.object(setup, "_registered_browsers", return_value=[]), \
+             mock.patch.object(setup, "_browser_roots", return_value=[self.root]), \
              mock.patch.object(setup, "_running_browser_names", return_value=running), \
              mock.patch.object(setup, "_default_browser_name", return_value=default):
             return [name for name, _, _ in setup.find_browsers()]
@@ -172,6 +226,55 @@ class TestClipboard(unittest.TestCase):
     def test_a_failure_is_reported_rather_than_raised(self):
         with mock.patch.object(setup.subprocess, "run", side_effect=OSError):
             self.assertFalse(setup.copy_to_clipboard("anything"))
+
+
+class TestBrowserIcon(unittest.TestCase):
+    """Icons come from each browser's own executable.
+
+    Taken rather than bundled, so every browser shows its real icon and
+    nothing has to be shipped or kept up to date.
+    """
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self._saved = setup.INSTALL_DIR
+        setup.INSTALL_DIR = Path(self.tmp.name)
+
+    def tearDown(self):
+        setup.INSTALL_DIR = self._saved
+        self.tmp.cleanup()
+
+    def test_extracts_a_real_browser_icon(self):
+        browsers = setup.find_browsers()
+        if not browsers:
+            self.skipTest("no browser installed to extract from")
+
+        icon = setup.browser_icon(browsers[0][2])
+        self.assertIsNotNone(icon)
+        self.assertTrue(icon.is_file())
+        self.assertGreater(icon.stat().st_size, 0)
+
+    def test_a_second_call_uses_the_cache(self):
+        browsers = setup.find_browsers()
+        if not browsers:
+            self.skipTest("no browser installed to extract from")
+
+        first = setup.browser_icon(browsers[0][2])
+        # Extraction spawns PowerShell, so the cached path must be reused.
+        with mock.patch.object(setup.subprocess, "run") as run:
+            second = setup.browser_icon(browsers[0][2])
+        run.assert_not_called()
+        self.assertEqual(first, second)
+
+    def test_a_failure_returns_none_rather_than_raising(self):
+        # A missing icon leaves a text-only button, not a broken dialog.
+        with mock.patch.object(setup.subprocess, "run", side_effect=OSError):
+            self.assertIsNone(setup.browser_icon(Path("C:/nope/chrome.exe")))
+
+    def test_an_unwritable_cache_is_not_fatal(self):
+        setup.INSTALL_DIR = Path(self.tmp.name) / "file-not-dir"
+        setup.INSTALL_DIR.write_text("blocks the mkdir")
+        self.assertIsNone(setup.browser_icon(Path("C:/any/chrome.exe")))
 
 
 class TestLaunchInstalled(unittest.TestCase):

@@ -243,16 +243,32 @@ def _browser_roots() -> list[Path]:
 def find_browsers() -> list[tuple[str, str, Path]]:
     """Return (name, extensions URL, executable) for each browser installed.
 
-    Ordered so the browser the user is actually in comes first: whichever is
-    running, then their default, then the rest. That is the one whose
-    extensions page should open on its own.
+    Two sources, because neither alone is complete: the registry lists what
+    Windows knows about wherever it was installed, and the usual directories
+    catch a browser that never registered itself. Results are ordered so the
+    browser the user is actually in comes first — whichever is running, then
+    their default, then the rest.
     """
-    found = []
+    found: list[tuple[str, str, Path]] = []
+    seen: set[str] = set()
+
+    def remember(name: str, url: str, executable: Path) -> None:
+        # The same browser can appear in both sources; keep the first.
+        if name in seen:
+            return
+        seen.add(name)
+        found.append((name, url, executable))
+
+    for name, url, executable in _registered_browsers():
+        remember(name, url, executable)
+
     for name, url, parts in _BROWSERS:
+        if name in seen:
+            continue
         for root in _browser_roots():
             candidate = root.joinpath(*parts)
             if candidate.is_file():
-                found.append((name, url, candidate))
+                remember(name, url, candidate)
                 break
 
     running = _running_browser_names()
@@ -268,6 +284,62 @@ def find_browsers() -> list[tuple[str, str, Path]]:
         )
 
     return sorted(found, key=rank)
+
+
+def _registered_browsers() -> list[tuple[str, str, Path]]:
+    """Browsers Windows has on record, wherever they were installed.
+
+    StartMenuInternet is where every browser registers itself, so this finds
+    one installed to a second drive or a custom folder that the fixed paths
+    would miss.
+    """
+    found = []
+    for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            clients = winreg.OpenKey(root, r"SOFTWARE\Clients\StartMenuInternet")
+        except OSError:
+            continue
+
+        with clients:
+            index = 0
+            while True:
+                try:
+                    entry = winreg.EnumKey(clients, index)
+                except OSError:
+                    break
+                index += 1
+
+                known = _match_browser(entry)
+                if known is None:
+                    continue
+
+                try:
+                    with winreg.OpenKey(
+                        clients, rf"{entry}\shell\open\command"
+                    ) as command:
+                        raw, _ = winreg.QueryValueEx(command, "")
+                except OSError:
+                    continue
+
+                # The command is a quoted path, sometimes with arguments.
+                executable = Path(raw.strip().strip('"').split('" ')[0].strip('"'))
+                if executable.is_file():
+                    name, url = known
+                    found.append((name, url, executable))
+    return found
+
+
+def _match_browser(registry_name: str) -> "tuple[str, str] | None":
+    """Map a registry entry to one of the browsers this extension supports.
+
+    Firefox is deliberately absent: it uses a different extension format, and
+    offering a button that cannot work would be worse than leaving it out.
+    """
+    lowered = registry_name.lower()
+    for name, url, _ in _BROWSERS:
+        if name.lower() in lowered:
+            return name, url
+    return None
 
 
 def _running_browser_names() -> set[str]:
@@ -345,6 +417,48 @@ def open_extensions_page(browser: tuple[str, str, Path]) -> bool:
         return True
     except OSError:
         return False
+
+
+def browser_icon(executable: Path, size: int = 20) -> "Path | None":
+    """Extract a browser's own icon, for the buttons that open it.
+
+    Taken from the executable rather than bundled, so every browser is shown
+    with its real icon and nothing has to be shipped or kept up to date.
+    Cached beside the install, since extraction spawns PowerShell.
+    """
+    cache = INSTALL_DIR / "icons"
+    target = cache / f"{executable.stem}-{size}.png"
+    if target.is_file():
+        return target
+
+    try:
+        cache.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+
+    # ExtractAssociatedIcon gives 32x32; the redraw is what makes it sharp at
+    # button size rather than letting the widget scale it.
+    script = (
+        "Add-Type -AssemblyName System.Drawing;"
+        f"$icon = [System.Drawing.Icon]::ExtractAssociatedIcon('{executable}');"
+        f"$bitmap = New-Object System.Drawing.Bitmap {size},{size};"
+        "$graphics = [System.Drawing.Graphics]::FromImage($bitmap);"
+        "$graphics.InterpolationMode = 'HighQualityBicubic';"
+        f"$graphics.DrawIcon($icon, (New-Object System.Drawing.Rectangle 0,0,{size},{size}));"
+        f"$bitmap.Save('{target}', [System.Drawing.Imaging.ImageFormat]::Png);"
+        "$graphics.Dispose(); $bitmap.Dispose(); $icon.Dispose()"
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            timeout=15,
+            **_no_window(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    return target if target.is_file() else None
 
 
 def copy_to_clipboard(text: str) -> bool:

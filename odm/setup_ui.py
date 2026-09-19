@@ -15,6 +15,26 @@ BORDER = "#34343c"
 TEXT_DIM = "#8b8b96"
 
 
+def _browser_icon(executable, size: int = 16):
+    """A browser's own icon for its button, or None if unavailable.
+
+    Icons are a nicety: a missing one leaves a text-only button rather than
+    breaking the window. Shared with the Settings dialog, which shows the
+    same buttons.
+    """
+    path = setup.browser_icon(executable)
+    if path is None:
+        return None
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            loaded = image.convert("RGBA")
+        return ctk.CTkImage(light_image=loaded, dark_image=loaded, size=(size, size))
+    except Exception:
+        return None
+
+
 class SetupWindow(ctk.CTk):
     """First-run installer. Sets self.launch_after when the app should start."""
 
@@ -159,9 +179,16 @@ class SetupWindow(ctk.CTk):
         if browsers:
             grid = ctk.CTkFrame(self, fg_color="transparent")
             grid.pack(padx=24, pady=(6, 0), fill="x")
+            # Kept alive on self, or Tk collects the images out from under
+            # the buttons still showing them.
+            self._browser_icons = []
             for browser in browsers:
+                icon = _browser_icon(browser[2])
+                if icon is not None:
+                    self._browser_icons.append(icon)
                 ctk.CTkButton(
-                    grid, text=browser[0], width=96, height=34, corner_radius=8,
+                    grid, text=browser[0], image=icon, compound="left",
+                    width=106 if icon else 96, height=34, corner_radius=8,
                     fg_color=SURFACE_2, hover_color=BORDER, border_width=1,
                     border_color=BORDER, font=ctk.CTkFont(size=12),
                     command=lambda b=browser: self._open_browser(b),
