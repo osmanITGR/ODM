@@ -7,6 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../engine/rate_limiter.dart';
 import '../services/app_controller.dart';
+import '../services/updater.dart';
+import 'update_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.controller});
@@ -18,6 +20,34 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  bool _checkingUpdate = false;
+  String? _updateStatus;
+
+  Future<void> _checkForUpdate() async {
+    setState(() {
+      _checkingUpdate = true;
+      _updateStatus = null;
+    });
+
+    final release = await checkForUpdate();
+    final current = (await PackageInfo.fromPlatform()).version;
+    if (!mounted) return;
+
+    setState(() => _checkingUpdate = false);
+
+    if (release == null) {
+      setState(() => _updateStatus = 'Could not check — are you online?');
+      return;
+    }
+    if (!release.isNewerThan(current) || release.downloadUrl == null) {
+      setState(() => _updateStatus = 'You are on the latest version');
+      return;
+    }
+
+    setState(() => _updateStatus = 'Version ${release.version} is available');
+    if (mounted) await showUpdateDialog(context, release, current);
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = widget.controller.settings;
@@ -136,6 +166,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const ListTile(
             title: Text('ODM — Osman Download Manager'),
             subtitle: _AppVersion(),
+          ),
+
+          ListTile(
+            leading: _checkingUpdate
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.system_update_outlined),
+            title: const Text('Check for updates'),
+            subtitle: _updateStatus == null ? null : Text(_updateStatus!),
+            onTap: _checkingUpdate ? null : _checkForUpdate,
           ),
 
           ListTile(

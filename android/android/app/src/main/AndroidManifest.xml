@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- The app updates itself from its GitHub release, since it is not in a
+         store. Android still shows its own confirmation before installing. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Legacy storage, only needed up to Android 10; newer releases write to
          the app's own Downloads directory, which needs no permission. -->
     <uses-permission

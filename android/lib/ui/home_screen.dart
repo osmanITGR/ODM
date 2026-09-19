@@ -4,14 +4,17 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../engine/models.dart';
 import '../engine/rate_limiter.dart';
 import '../engine/task.dart';
 import '../services/app_controller.dart';
+import '../services/updater.dart';
 import 'add_download_sheet.dart';
 import 'download_tile.dart';
 import 'settings_screen.dart';
+import 'update_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.controller});
@@ -30,6 +33,9 @@ class HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onChanged);
+    // The app is not in a store, so nothing else tells anyone a new release
+    // exists. Delayed so it does not compete with the first frame.
+    Future<void>.delayed(const Duration(seconds: 4), _checkForUpdate);
     // Speed and byte counts move continuously; the manager only notifies on
     // structural changes, so the numbers need their own repaint.
     _ticker = Timer.periodic(const Duration(milliseconds: 600), (_) {
@@ -41,6 +47,23 @@ class HomeScreenState extends State<HomeScreen> {
 
   void _onChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// Offer a newer release, if there is one.
+  ///
+  /// Silent when the check fails or the app is current: someone offline
+  /// should see nothing rather than an error they did not ask for.
+  Future<void> _checkForUpdate() async {
+    if (!await shouldCheckForUpdate()) return;
+    await noteUpdateChecked();
+
+    final release = await checkForUpdate();
+    if (!mounted || release == null || release.downloadUrl == null) return;
+
+    final current = (await PackageInfo.fromPlatform()).version;
+    if (!mounted || !release.isNewerThan(current)) return;
+
+    await showUpdateDialog(context, release, current);
   }
 
   @override

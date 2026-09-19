@@ -5,11 +5,13 @@ from __future__ import annotations
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog
 
 import customtkinter as ctk
 
+from . import __version__ as _app_version_string
 from .bridge import Bridge
 from .clipboard import ClipboardMonitor
 from .engine import State
@@ -217,6 +219,9 @@ class App(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(400, self._tick)
         self._start_bridge_quietly()
+        # Long enough after launch that the window is up and the check does
+        # not compete with the first paint.
+        self.after(4000, self._check_for_update)
 
         # The installer hands this over right after the extension step, so the
         # token is ready to paste when the popup asks for it.
@@ -618,6 +623,139 @@ class App(ctk.CTk):
     def _bridge_download(self, url: str, filename: str | None) -> None:
         self.after(0, lambda: self.manager.add(url, filename=filename))
 
+    # updates ----------------------------------------------------------
+
+    def _check_for_update(self) -> None:
+        """Look for a newer release, without blocking or nagging.
+
+        People install from a GitHub release and never hear about the next
+        one, so a fix only reaches whoever happens to look. A failed check
+        stays silent: someone offline should see nothing rather than an error
+        they did not ask for.
+        """
+        from . import updater
+
+        if not updater.should_check():
+            return
+
+        def look():
+            updater.note_checked()
+            release = updater.check()
+            if release and release.is_newer and release.download_url:
+                self.after(0, lambda: self._offer_update(release))
+
+        threading.Thread(target=look, daemon=True).start()
+
+    def _offer_update(self, release) -> None:
+        from . import updater
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Update available")
+        dialog.geometry("420x330")
+        dialog.resizable(False, False)
+        dialog.configure(fg_color=SURFACE)
+        dialog.transient(self)
+
+        ctk.CTkLabel(
+            dialog, text=f"ODM {release.version} is available",
+            font=ctk.CTkFont(size=16, weight="bold"), text_color="#e6e6ea",
+        ).pack(padx=22, pady=(22, 2), anchor="w")
+        from . import __version__
+
+        ctk.CTkLabel(
+            dialog, text=f"You have {__version__}.",
+            font=ctk.CTkFont(size=11), text_color=TEXT_DIM,
+        ).pack(padx=22, anchor="w")
+
+        summary = updater.summarise(release.notes)
+        if summary:
+            box = ctk.CTkTextbox(
+                dialog, height=120, corner_radius=8, fg_color=SURFACE_2,
+                border_width=1, border_color=BORDER,
+                font=ctk.CTkFont(size=11), wrap="word",
+            )
+            box.pack(padx=22, pady=(12, 0), fill="x")
+            box.insert("1.0", summary)
+            box.configure(state="disabled")
+
+        status = tk.StringVar(value="")
+        ctk.CTkLabel(
+            dialog, textvariable=status, font=ctk.CTkFont(size=11),
+            text_color=TEXT_DIM, wraplength=370, justify="left",
+        ).pack(padx=22, pady=(10, 0), anchor="w")
+
+        row = ctk.CTkFrame(dialog, fg_color="transparent")
+        row.pack(side="bottom", fill="x", padx=22, pady=18)
+
+        def update_now():
+            update_btn.configure(state="disabled", text="Downloading...")
+            status.set("Downloading the update...")
+            self._download_update(release, status, dialog, update_btn)
+
+        def open_page():
+            webbrowser.open(updater.RELEASES_PAGE)
+
+        update_btn = ctk.CTkButton(
+            row, text="Update now", height=34, corner_radius=8, fg_color=ACCENT,
+            hover_color="#2558c0", font=ctk.CTkFont(size=12, weight="bold"),
+            command=update_now,
+        )
+        update_btn.pack(side="right")
+        ctk.CTkButton(
+            row, text="Later", width=80, height=34, corner_radius=8,
+            fg_color=SURFACE_2, hover_color=BORDER, border_width=1,
+            border_color=BORDER, font=ctk.CTkFont(size=12),
+            command=dialog.destroy,
+        ).pack(side="right", padx=(0, 8))
+        ctk.CTkButton(
+            row, text="What's new", width=100, height=34, corner_radius=8,
+            fg_color=SURFACE_2, hover_color=BORDER, border_width=1,
+            border_color=BORDER, font=ctk.CTkFont(size=12), command=open_page,
+        ).pack(side="left")
+
+    def _download_update(self, release, status, dialog, button) -> None:
+        """Fetch the new exe with ODM's own engine, then swap it in."""
+        from . import updater
+        from .engine import Download
+
+        destination = updater.download_dir()
+
+        def run():
+            download = Download(
+                release.download_url, destination, connections=8,
+                filename=f"ODM-{release.version}.exe", limiter=self.manager.limiter,
+            )
+
+            def poll():
+                if download.progress.state is State.RUNNING and download.progress.total:
+                    percent = download.progress.percent
+                    self.after(0, lambda: status.set(f"Downloading... {percent:.0f}%"))
+                if download.progress.state not in (State.DONE, State.ERROR):
+                    self.after(500, poll)
+
+            self.after(0, poll)
+            download.start()
+
+            if download.progress.state is not State.DONE:
+                message = download.progress.error or "download failed"
+                self.after(0, lambda: status.set(f"Could not update: {message}"))
+                self.after(0, lambda: button.configure(
+                    state="normal", text="Try again"))
+                return
+
+            self.after(0, lambda: status.set("Restarting to finish..."))
+            if updater.install(download.target):
+                # The helper waits for this process to exit before swapping.
+                self.after(600, self._on_close)
+            else:
+                self.after(0, lambda: status.set(
+                    "Downloaded, but could not replace the running copy. "
+                    "Close ODM and run the downloaded file."))
+                self.after(0, lambda: button.configure(
+                    state="normal", text="Try again"))
+
+        threading.Thread(target=run, daemon=True).start()
+
     @staticmethod
     def _browser_icon(executable):
         """A browser's own icon for its Connect button, or None if unavailable."""
@@ -628,9 +766,9 @@ class App(ctk.CTk):
     def _open_settings(self) -> None:
         dialog = ctk.CTkToplevel(self)
         dialog.title("Settings")
-        # Taller than it was: the browser row and its explanation were added
-        # below the token, and the schedule section still has to fit under it.
-        dialog.geometry("440x510")
+        # Taller than it was: browser integration, schedule and updates all
+        # have to fit without scrolling.
+        dialog.geometry("440x620")
         dialog.resizable(False, False)
         dialog.configure(fg_color=SURFACE)
         dialog.transient(self)
@@ -819,6 +957,42 @@ class App(ctk.CTk):
             fg_color=SURFACE_2, hover_color=BORDER, border_width=1, border_color=BORDER,
             font=ctk.CTkFont(size=11), command=apply_schedule,
         ).pack(padx=20, pady=(6, 0), anchor="w")
+
+        # --- updates ---
+        section("Updates")
+
+        update_state = tk.StringVar(value=f"Version {_app_version_string}")
+        ctk.CTkLabel(
+            dialog, textvariable=update_state, font=ctk.CTkFont(size=11),
+            text_color=TEXT_DIM, wraplength=390, justify="left",
+        ).pack(padx=20, anchor="w")
+
+        def check_now():
+            from . import updater
+
+            update_state.set("Checking...")
+
+            def look():
+                release = updater.check()
+                if release is None:
+                    self.after(0, lambda: update_state.set(
+                        "Could not check - are you online?"))
+                elif release.is_newer and release.download_url:
+                    self.after(0, lambda: update_state.set(
+                        f"ODM {release.version} is available"))
+                    self.after(0, lambda: self._offer_update(release))
+                else:
+                    self.after(0, lambda: update_state.set(
+                        f"Version {_app_version_string} - up to date"))
+
+            threading.Thread(target=look, daemon=True).start()
+
+        ctk.CTkButton(
+            dialog, text="Check for updates", width=140, height=30,
+            corner_radius=6, fg_color=SURFACE_2, hover_color=BORDER,
+            border_width=1, border_color=BORDER, font=ctk.CTkFont(size=11),
+            command=check_now,
+        ).pack(padx=20, pady=(8, 0), anchor="w")
 
         ctk.CTkButton(
             dialog, text="Close", height=32, corner_radius=8, fg_color=SURFACE_2,
