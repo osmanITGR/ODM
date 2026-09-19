@@ -406,17 +406,59 @@ def _default_browser_name() -> str | None:
 
 
 def open_extensions_page(browser: tuple[str, str, Path]) -> bool:
-    """Open a browser at its extensions page.
+    """Open a browser on a page that walks through connecting the extension.
 
-    The URL is passed to that browser's own executable rather than to the
-    default handler, since chrome:// and edge:// mean nothing to the shell.
+    Passing chrome://extensions on the command line does nothing: Chromium
+    refuses to navigate to its own internal pages that way, whether it is
+    already running or started cold, and silently opens a blank tab instead.
+    A local file:// page does open reliably, so that is what is shown — with
+    the address and the folder each behind a Copy button, since copying from
+    a page the browser rendered is allowed.
     """
-    _, url, executable = browser
+    name, url, executable = browser
+    page = _write_connect_page(url)
+    target = str(page) if page else url
     try:
-        subprocess.Popen([str(executable), url], close_fds=True)
+        subprocess.Popen([str(executable), target], close_fds=True)
         return True
     except OSError:
         return False
+
+
+def _write_connect_page(extensions_url: str) -> "Path | None":
+    """Fill in the connect page for one browser and return its path."""
+    template = _bundled_asset("connect.html")
+    if template is None:
+        return None
+
+    try:
+        html = template.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    html = html.replace("__EXTENSIONS_URL__", extensions_url)
+    # Backslashes would be read as escapes inside the page's JavaScript.
+    html = html.replace("__EXTENSION_DIR__", str(EXTENSION_DIR).replace("\\", "\\\\"))
+
+    try:
+        output = INSTALL_DIR / "connect.html"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(html, encoding="utf-8")
+        return output
+    except OSError:
+        return None
+
+
+def _bundled_asset(name: str) -> "Path | None":
+    """Locate a file shipped alongside the code, frozen or not.
+
+    The spec flattens odm/assets to assets/ inside the bundle, so the two
+    layouts differ.
+    """
+    root = getattr(sys, "_MEIPASS", None)
+    base = Path(root) / "assets" if root else Path(__file__).parent / "assets"
+    candidate = base / name
+    return candidate if candidate.is_file() else None
 
 
 def browser_icon(executable: Path, size: int = 20) -> "Path | None":

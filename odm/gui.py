@@ -702,12 +702,8 @@ class App(ctk.CTk):
             if not setup_mod.open_extensions_page(browser):
                 bridge_state.set(f"Could not open {name}")
                 return
-            copied = setup_mod.copy_to_clipboard(str(setup_mod.EXTENSION_DIR))
-            bridge_state.set(
-                f"{name} opened - press Ctrl+V in Load unpacked"
-                if copied
-                else f"{name} opened - the folder is {setup_mod.EXTENSION_DIR}"
-            )
+            setup_mod.copy_to_clipboard(str(setup_mod.EXTENSION_DIR))
+            bridge_state.set(f"{name} opened - follow the steps on that page")
 
         browsers = setup_mod.find_browsers()
         if browsers:

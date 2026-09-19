@@ -33,8 +33,6 @@ Thumbs.db
 
 # Developer-only folders
 installer/
-odm.spec
-version_info.txt
 
 # Android app: the source is tracked, the signing key never is. Losing the
 # keystore means no further updates can be published under this identity, so

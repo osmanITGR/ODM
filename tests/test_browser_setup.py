@@ -193,16 +193,58 @@ class TestRunningBrowserDetection(unittest.TestCase):
 
 
 class TestOpenExtensionsPage(unittest.TestCase):
-    def test_passes_the_url_to_that_browser_not_the_shell(self):
-        # chrome:// and edge:// mean nothing to the default handler, so the
-        # URL has to go to the browser's own executable.
+    """What the Connect button hands to the browser.
+
+    Passing chrome://extensions on the command line does nothing — Chromium
+    refuses to navigate to its own internal pages that way and opens a blank
+    tab instead — so a local page carrying the steps is opened instead.
+    """
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self._saved = setup.INSTALL_DIR
+        setup.INSTALL_DIR = Path(self.tmp.name)
+
+    def tearDown(self):
+        setup.INSTALL_DIR = self._saved
+        self.tmp.cleanup()
+
+    def test_opens_the_connect_page_not_the_internal_url(self):
         browser = ("Chrome", "chrome://extensions", Path("C:/fake/chrome.exe"))
         with mock.patch.object(setup.subprocess, "Popen") as popen:
             self.assertTrue(setup.open_extensions_page(browser))
 
         command = popen.call_args[0][0]
         self.assertEqual(command[0], "C:/fake/chrome.exe".replace("/", os.sep))
-        self.assertEqual(command[1], "chrome://extensions")
+        self.assertTrue(command[1].endswith("connect.html"))
+        self.assertNotEqual(command[1], "chrome://extensions")
+
+    def test_the_page_carries_that_browser_s_own_address(self):
+        browser = ("Edge", "edge://extensions", Path("C:/fake/msedge.exe"))
+        with mock.patch.object(setup.subprocess, "Popen"):
+            setup.open_extensions_page(browser)
+
+        html = (setup.INSTALL_DIR / "connect.html").read_text(encoding="utf-8")
+        self.assertIn("edge://extensions", html)
+        self.assertNotIn("__EXTENSIONS_URL__", html)
+
+    def test_the_folder_is_escaped_for_the_page_s_javascript(self):
+        browser = ("Chrome", "chrome://extensions", Path("C:/fake/chrome.exe"))
+        with mock.patch.object(setup.subprocess, "Popen"):
+            setup.open_extensions_page(browser)
+
+        html = (setup.INSTALL_DIR / "connect.html").read_text(encoding="utf-8")
+        self.assertNotIn("__EXTENSION_DIR__", html)
+        # A raw backslash would be read as an escape inside the string.
+        self.assertNotIn(r'FOLDER = "C:\U', html)
+
+    def test_falls_back_to_the_url_when_the_page_cannot_be_written(self):
+        browser = ("Chrome", "chrome://extensions", Path("C:/fake/chrome.exe"))
+        with mock.patch.object(setup, "_write_connect_page", return_value=None), \
+             mock.patch.object(setup.subprocess, "Popen") as popen:
+            self.assertTrue(setup.open_extensions_page(browser))
+
+        self.assertEqual(popen.call_args[0][0][1], "chrome://extensions")
 
     def test_a_missing_executable_reports_failure(self):
         browser = ("Chrome", "chrome://extensions", Path("C:/nope/chrome.exe"))

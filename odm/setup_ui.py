@@ -174,7 +174,7 @@ class SetupWindow(ctk.CTk):
         # Step 1 -----------------------------------------------------------
         # find_browsers() puts the one in use first, so opening browsers[0] is
         # opening whichever browser the user is actually in.
-        self._step_heading("1.  Your extensions page is opening")
+        self._step_heading("1.  Opening your browser with the steps")
 
         if browsers:
             grid = ctk.CTkFrame(self, fg_color="transparent")
